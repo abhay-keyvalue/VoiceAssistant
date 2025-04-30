@@ -7,13 +7,13 @@
 
 import React from 'react';
 import { View, StyleSheet, Text } from 'react-native';
-import VoiceAssistantOrb from './src/components/VoiceAssistant/VoiceAssistantOrb';
+import VoiceWaveBlob from './src/components/VoiceWaveBlob';
 
 function App(): React.JSX.Element {
   return (
     <View style={styles.container}>
       <Text>Hello World</Text>
-      <VoiceAssistantOrb />
+      <VoiceWaveBlob />
     </View>
   );
 }

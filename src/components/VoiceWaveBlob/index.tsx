@@ -1,17 +1,43 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import Animated, {
-  useAnimatedStyle,
   useSharedValue,
-  withTiming,
+  withSpring,
+  useAnimatedStyle,
+  runOnJS,
 } from 'react-native-reanimated';
-import LinearGradient from 'react-native-linear-gradient';
 import TrackPlayer from 'react-native-track-player';
+import LottieView from 'lottie-react-native';
+import blobAnimation from '../../assets/animations/blobAnimation.json';
 
-const VoiceAssistantOrb: React.FC = () => {
+const ORB_SIZE = 180;
+
+const VoiceWaveBlob: React.FC = () => {
   const [isActive, setIsActive] = useState(false);
-  const scale = useSharedValue(1);
+  const [lottieProgress, setLottieProgress] = useState(0);
   const analysisInterval = useRef<NodeJS.Timeout | null>(null);
+  const progress = useSharedValue(0);
+
+  const setupPlayer = async () => {
+    try {
+      await TrackPlayer.setupPlayer();
+    } catch (error) {
+      console.error('Error setting up TrackPlayer:', error);
+    }
+  };
+
+
+  const stopAudioAnalysis = useCallback(() => {
+    if (analysisInterval.current) {
+      clearInterval(analysisInterval.current);
+      analysisInterval.current = null;
+    }
+
+    progress.value = withSpring(0, {
+      damping: 10,
+      stiffness: 100,
+    });
+  }, [ progress]);
 
   useEffect(() => {
     setupPlayer();
@@ -19,40 +45,23 @@ const VoiceAssistantOrb: React.FC = () => {
       cleanupPlayer();
       stopAudioAnalysis();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const setupPlayer = async () => {
-    try {
-      console.log('Setting up TrackPlayer');
-      await TrackPlayer.setupPlayer();
-      console.log('TrackPlayer setup complete');
-    } catch (error) {
-      console.error('Error setting up TrackPlayer:', error);
-    }
-  };
+  }, [stopAudioAnalysis]);
 
   const startAudioAnalysis = useCallback(() => {
-    console.log('Starting audio analysis');
     analysisInterval.current = setInterval(() => {
       // Mock: Replace this with actual audio metering data from a native module
       const mockAudioLevel = Math.random() * 0.5 + 1; // scale between 1.0 and 1.8
-      scale.value = withTiming(mockAudioLevel, { duration: 200 });
-    }, 150);
-  }, [scale]);
+      // Map scale to progress (0-1)
+      progress.value = withSpring((mockAudioLevel - 1) / 0.8, {
+        damping: 10,
+        stiffness: 100,
+      });
 
-  const stopAudioAnalysis = useCallback(() => {
-    console.log('Stopping audio analysis');
-    if (analysisInterval.current) {
-      clearInterval(analysisInterval.current);
-      analysisInterval.current = null;
-    }
-    scale.value = withTiming(1, { duration: 200 });
-  }, [scale]);
+    }, 150);
+  }, [progress]);
 
   const cleanupPlayer = async () => {
     try {
-      console.log('Cleaning up TrackPlayer');
       await TrackPlayer.reset();
     } catch (error) {
       console.error('Error cleaning up TrackPlayer:', error);
@@ -60,7 +69,6 @@ const VoiceAssistantOrb: React.FC = () => {
   };
 
   const handlePress = async () => {
-    console.log('Orb pressed, current state:', isActive);
     if (!isActive) {
       await TrackPlayer.add({
         id: 'sample-audio',
@@ -79,23 +87,28 @@ const VoiceAssistantOrb: React.FC = () => {
   };
 
   const animatedStyle = useAnimatedStyle(() => {
+    const currentProgress = progress.value;
+    runOnJS(setLottieProgress)(currentProgress);
     return {
-      transform: [{ scale: scale.value }],
-      opacity: 0.95,
+      transform: [
+        { scale: 1 + progress.value },
+      ],
     };
   });
+
 
   return (
     <View style={styles.container}>
       <TouchableOpacity onPress={handlePress}>
-        <Animated.View style={[styles.orbContainer, animatedStyle]}>
-          <LinearGradient
-            colors={['#3A6DFF', '#011046']}
-            style={styles.orb}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-          />
-        </Animated.View>
+        <Animated.View style={[styles.orbContainer, animatedStyle]} />
+        <LottieView
+          source={blobAnimation}
+          autoPlay={false}
+          loop={false}
+          speed={1}
+          progress={lottieProgress}
+          style={[styles.animation, animatedStyle]}
+        />
       </TouchableOpacity>
     </View>
   );
@@ -109,21 +122,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   orbContainer: {
-    width: 180,
-    height: 180,
-    borderRadius: 110,
+    width: ORB_SIZE,
+    height: ORB_SIZE,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#3A6DFF',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.9,
     shadowRadius: 30,
+    backgroundColor: '#3A6DFF',
+    borderRadius: '50%',
   },
-  orb: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 110,
+  animation: {
+    width: 300,
+    height: 300,
   },
 });
 
-export default VoiceAssistantOrb;
+export default VoiceWaveBlob;
