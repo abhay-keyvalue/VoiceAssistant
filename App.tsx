@@ -41,7 +41,7 @@ const App = () => {
           artist: 'SoundHelix',
         }}
         animationConfig={{
-          type: 'lottie',
+          type: 'default',
           source: blobAnimation,
           color: '#3A6DFF',
           shadowColor: '#3A6DFF',

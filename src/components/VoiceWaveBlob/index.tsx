@@ -1,38 +1,18 @@
 import React, {useEffect, useState, useCallback, useRef} from 'react';
-import {View, StyleSheet, Text} from 'react-native';
+import {View, StyleSheet, Text, EmitterSubscription} from 'react-native';
 import Animated, {
   useSharedValue,
   withSpring,
   useAnimatedStyle,
   runOnJS,
 } from 'react-native-reanimated';
-import TrackPlayer, {State} from 'react-native-track-player';
+import TrackPlayer, {State, Event} from 'react-native-track-player';
 import LottieView from 'lottie-react-native';
-
-/**
- * Configuration interface for audio playback
- * @interface AudioConfig
- * @property {string} url - URL of the audio file to play
- * @property {string} [title] - Optional title of the audio track
- * @property {string} [artist] - Optional artist name
- */
 interface AudioConfig {
   url: string;
   title?: string;
   artist?: string;
 }
-
-/**
- * Configuration interface for animation appearance
- * @interface AnimationConfig
- * @property {'default' | 'lottie'} type - Type of animation to display
- * @property {any} [source] - Lottie animation source (required for 'lottie' type)
- * @property {number} [size] - Size of the animation in pixels
- * @property {string} [color] - Color of the default animation
- * @property {string} [shadowColor] - Color of the shadow
- * @property {number} [shadowOpacity] - Opacity of the shadow (0-1)
- * @property {number} [shadowRadius] - Radius of the shadow in pixels
- */
 interface AnimationConfig {
   type: 'default' | 'lottie';
   source?: any;
@@ -43,15 +23,6 @@ interface AnimationConfig {
   shadowRadius?: number;
 }
 
-/**
- * Props interface for the VoiceWaveBlob component
- * @interface VoiceWaveBlobProps
- * @property {AudioConfig} audioConfig - Configuration for audio playback
- * @property {AnimationConfig} animationConfig - Configuration for animation appearance
- * @property {boolean} isPlaying - Controls whether the audio is playing
- * @property {() => void} [onPlay] - Optional callback when audio starts playing
- * @property {() => void} [onStop] - Optional callback when audio stops playing
- */
 interface VoiceWaveBlobProps {
   audioConfig: AudioConfig;
   animationConfig: AnimationConfig;
@@ -73,24 +44,6 @@ const DEFAULT_SHADOW_RADIUS = 30;
  * A React Native component that displays an animated blob that responds to audio playback.
  * It supports two types of animations: a default circular blob or a custom Lottie animation.
  * The component can be controlled externally through the isPlaying prop.
- *
- * @component
- * @example
- * <VoiceWaveBlob
- *   audioConfig={{
- *     url: 'https://example.com/audio.mp3',
- *     title: 'Sample Audio',
- *     artist: 'Artist Name'
- *   }}
- *   animationConfig={{
- *     type: 'default',
- *     size: 200,
- *     color: '#3A6DFF'
- *   }}
- *   isPlaying={true}
- *   onPlay={() => console.log('Playing')}
- *   onStop={() => console.log('Stopped')}
- * />
  */
 const VoiceWaveBlob: React.FC<VoiceWaveBlobProps> = ({
   audioConfig,
@@ -100,9 +53,10 @@ const VoiceWaveBlob: React.FC<VoiceWaveBlobProps> = ({
   onStop,
 }) => {
   const [lottieProgress, setLottieProgress] = useState(0);
-  const analysisInterval = useRef<NodeJS.Timeout | null>(null);
+  const analysisInterval = useRef<EmitterSubscription | null>(null);
   const progress = useSharedValue(0);
   const isPlayerInitialized = useRef(false);
+  const updateInterval = useRef<NodeJS.Timeout | null>(null);
 
   const {
     type = 'default',
@@ -119,7 +73,7 @@ const VoiceWaveBlob: React.FC<VoiceWaveBlobProps> = ({
    * @async
    */
   const setupPlayer = async () => {
-    if (isPlayerInitialized.current) return;
+    if (isPlayerInitialized.current) {return;}
 
     try {
       await TrackPlayer.setupPlayer();
@@ -130,12 +84,87 @@ const VoiceWaveBlob: React.FC<VoiceWaveBlobProps> = ({
   };
 
   /**
+   * Updates the audio level and animation
+   */
+  const updateAudioLevel = useCallback(async () => {
+    try {
+      // Create a more dynamic value that simulates audio amplitude
+      // Using multiple sine waves with different frequencies to create a more natural sound wave
+      const time = Date.now() / 1000; // Current time in seconds
+      const baseFrequency = 2; // Base frequency for the main wave
+      const highFrequency = 8; // Higher frequency for detail
+      const lowFrequency = 0.5; // Lower frequency for slow changes
+
+      // Combine multiple sine waves with different frequencies and amplitudes
+      const wave1 = Math.sin(time * baseFrequency) * 0.4;
+      const wave2 = Math.sin(time * highFrequency) * 0.2;
+      const wave3 = Math.sin(time * lowFrequency) * 0.3;
+
+      // Add some randomness for more natural variation
+      const randomFactor = Math.random() * 0.1;
+
+      // Combine all waves and normalize to 0-1 range
+      const dynamicValue = (wave1 + wave2 + wave3 + randomFactor + 1) / 2;
+
+      // Map the dynamic value to our animation scale
+      const mappedLevel = Math.min(1, Math.max(0, dynamicValue));
+
+      progress.value = withSpring(mappedLevel, {
+        damping: 15,
+        stiffness: 120,
+      });
+      console.log('progress', progress.value);
+    } catch (error) {
+      console.error('Error getting audio progress:', error);
+    }
+  }, [progress]);
+
+  /**
+   * Starts the audio analysis animation using real-time audio level data
+   */
+  const startAudioAnalysis = useCallback(() => {
+    if (analysisInterval.current) {
+      analysisInterval.current.remove();
+    }
+    if (updateInterval.current) {
+      clearInterval(updateInterval.current);
+    }
+
+    // Add event listener for playback state changes
+    const audioLevelListener = TrackPlayer.addEventListener(
+      Event.PlaybackState,
+      async (state) => {
+        if (state.state === State.Playing) {
+          // Start periodic updates when playing
+          updateInterval.current = setInterval(updateAudioLevel, 30); // Increased frequency for smoother animation
+        } else {
+          // Clear interval when not playing
+          if (updateInterval.current) {
+            clearInterval(updateInterval.current);
+            updateInterval.current = null;
+          }
+        }
+      }
+    );
+
+    // Store the event listener reference
+    analysisInterval.current = audioLevelListener;
+
+    // Initial update
+    updateAudioLevel();
+  }, [updateAudioLevel]);
+
+  /**
    * Stops the audio analysis and resets the animation
    */
   const stopAudioAnalysis = useCallback(() => {
     if (analysisInterval.current) {
-      clearInterval(analysisInterval.current);
+      analysisInterval.current.remove();
       analysisInterval.current = null;
+    }
+    if (updateInterval.current) {
+      clearInterval(updateInterval.current);
+      updateInterval.current = null;
     }
 
     progress.value = withSpring(0, {
@@ -153,26 +182,6 @@ const VoiceWaveBlob: React.FC<VoiceWaveBlobProps> = ({
       stopAudioAnalysis();
     };
   }, [stopAudioAnalysis]);
-
-  /**
-   * Starts the audio analysis animation
-   * Currently uses mock data, but can be replaced with actual audio metering
-   */
-  const startAudioAnalysis = useCallback(() => {
-    if (analysisInterval.current) {
-      clearInterval(analysisInterval.current);
-    }
-
-    analysisInterval.current = setInterval(() => {
-      // Mock: Replace this with actual audio metering data from a native module
-      const mockAudioLevel = Math.random() * 0.5 + 1; // scale between 1.0 and 1.8
-      // Map scale to progress (0-1)
-      progress.value = withSpring((mockAudioLevel - 1) / 0.8, {
-        damping: 10,
-        stiffness: 100,
-      });
-    }, 150);
-  }, [progress]);
 
   /**
    * Cleans up the TrackPlayer instance
@@ -253,8 +262,8 @@ const VoiceWaveBlob: React.FC<VoiceWaveBlobProps> = ({
           styles.orbContainer,
           animatedStyle,
           {
-            width: size,
-            height: size,
+            width: size * 0.6,
+            height: size * 0.6,
             backgroundColor: color,
             shadowColor,
             shadowOpacity,
